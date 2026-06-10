@@ -496,12 +496,8 @@
           <div class="chart-wrap"><canvas id="chartPrazo"></canvas></div>
         </div>
         <div class="chart-card" style="grid-column:1/-1">
-          <div class="chart-title">👥 Performance por Assistente <span style="font-size:11px;color:var(--gray-400);font-weight:500;margin-left:8px">Total de MRHs — <span style="color:var(--red)">■ Atraso</span> <span style="color:var(--orange);margin-left:6px">■ Vence Hoje</span> <span style="color:var(--green);margin-left:6px">■ No Prazo</span> <span style="color:var(--blue-mid);margin-left:6px">■ Pendentes</span></span></div>
-          <div id="chart-assistente-bars" style="padding:8px 0;"></div>
-        </div>
-        <div class="chart-card" style="grid-column:1/-1">
-          <div class="chart-title">🏢 Volume por CR / Contrato</div>
-          <div id="chart-cr-layout" style="padding:8px 0;"></div>
+          <div class="chart-title">👥 Performance por Assistente</div>
+          <div id="chart-assistente-pizza" style="padding:8px 0;display:flex;flex-wrap:wrap;gap:20px;justify-content:center;"></div>
         </div>
       </div>
 
@@ -646,19 +642,35 @@
         <div class="section-title"><div class="section-title-line"></div>Importar Planilhas Excel</div>
       </div>
       <div class="upload-grid">
-        <div class="upload-card" id="drop-pendentes" ondragover="event.preventDefault();this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="handleDrop(event,'pendentes')">
-          <input type="file" accept=".xlsx,.xls" onchange="handleFile(event,'pendentes')">
-          <div class="upload-icon">📋</div>
+        <div class="upload-card" id="drop-pendentes" ondragover="event.preventDefault();this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="handleDropSRH(event)">
+          <!-- inputs ocultos para trigger programático -->
+          <input type="file" id="file-srh" accept=".xlsx,.xls" style="display:none" onchange="handleFileSRH(event)">
+          <input type="file" id="file-doc" accept=".xlsx,.xls" style="display:none" onchange="handleFileDoc(event)">
+          <div class="upload-icon" id="pend-icon">📋</div>
           <div class="upload-title">Planilha de Candidatos Pendentes</div>
-          <div class="upload-desc">Colaboradores aguardando cadastro no sistema. Arraste o arquivo ou clique para selecionar.</div>
-          <div style="margin-top:8px">
-            <span class="field-chip">MRH</span><span class="field-chip">FUNÇÃO</span><span class="field-chip">CR</span>
-            <span class="field-chip">INÍCIO CONTRATO</span><span class="field-chip">GERENTE</span>
-            <span class="field-chip">CPF</span><span class="field-chip">NOME</span><span class="field-chip">ASO</span>
-            <span class="field-chip">TIPO ASO</span><span class="field-chip">RESP. DOCUMENTAÇÃO</span>
-            <span class="field-chip">DOCUMENTOS PENDENTES</span>
+          <div id="pend-step-desc" class="upload-desc">Clique para selecionar a <strong>P1 — SRH</strong> (planilha com os IDs / MRHs).</div>
+          <!-- Etapas visuais -->
+          <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px" id="pend-steps">
+            <div id="step-srh" style="border-radius:8px;padding:10px 14px;border:2px dashed var(--blue-mid,#3b7de8);background:#eef3ff;cursor:pointer" onclick="document.getElementById('file-srh').click()">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-size:18px" id="icon-srh">📂</span>
+                <div>
+                  <div style="font-size:12px;font-weight:700;color:var(--blue-mid,#3b7de8)">Passo 1 — P1 SRH</div>
+                  <div style="font-size:11px;color:#555" id="label-srh">Clique aqui para selecionar</div>
+                </div>
+              </div>
+            </div>
+            <div id="step-doc" style="border-radius:8px;padding:10px 14px;border:2px dashed #ccc;background:#f9f9f9;opacity:.5;pointer-events:none">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-size:18px" id="icon-doc">📂</span>
+                <div>
+                  <div style="font-size:12px;font-weight:700;color:#7c3aed">Passo 2 — P2 Doc</div>
+                  <div style="font-size:11px;color:#555" id="label-doc">Aguardando P1...</div>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="upload-status" id="status-pendentes"></div>
+          <div class="upload-status" id="status-pendentes" style="margin-top:10px"></div>
         </div>
         <div class="upload-card" id="drop-enviados" ondragover="event.preventDefault();this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="handleDrop(event,'enviados')">
           <input type="file" accept=".xlsx,.xls" onchange="handleFile(event,'enviados')">
@@ -1013,7 +1025,10 @@ function navigate(v) {
 // UTILS
 // ═══════════════════════════════════════════════════════
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
-function today() { return new Date().toISOString().split('T')[0]; }
+function today() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
 function parseDate(v) {
   if (!v) return null;
   if (typeof v === 'number') {
@@ -1035,16 +1050,19 @@ function daysBetween(a, b) {
 }
 function calcStatus(inicio, finalizacao) {
   if (!inicio || !finalizacao) return null;
-  return finalizacao > inicio ? 'Em Atraso' : 'No Prazo';
+  // finalizacao anterior ao inicio = entregou antes = No Prazo
+  // finalizacao igual ou posterior = Em Atraso
+  return finalizacao >= inicio ? 'Em Atraso' : 'No Prazo';
 }
 function prazoASO(tipoAso) {
-  if (!tipoAso) return 0;
+  if (!tipoAso) return 2;
   if (tipoAso.toUpperCase().includes('COMPLEMENTAR')) return 7;
   return 2;
 }
 function venceEm(inicio, tipoAso) {
+  // Prazo: o ASO deve estar pronto X dias ANTES do início do contrato
   if (!inicio) return null;
-  const d = new Date(inicio);
+  const d = new Date(inicio + 'T12:00:00'); // evita bug de timezone
   d.setDate(d.getDate() - prazoASO(tipoAso));
   return d.toISOString().split('T')[0];
 }
@@ -1078,8 +1096,8 @@ function processFile(file, type) {
       const wb = XLSX.read(ev.target.result, {type:'binary'});
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(ws, {defval:''});
-      if (type === 'pendentes') importPendentes(rows, file.name);
-      else importEnviados(rows, file.name);
+      // pendentes agora usam runImportPendentes() com P1+P2
+      if (type !== 'pendentes') importEnviados(rows, file.name);
     } catch(err) {
       showStatus(type, 'err', '❌ Erro ao processar: ' + err.message);
     }
@@ -1087,17 +1105,148 @@ function processFile(file, type) {
   reader.readAsBinaryString(file);
 }
 
-function mapRow(row) {
-  // flexible column mapping
+// ── Fluxo sequencial P1 → P2 → import ──────────────────────────────────
+let _bufSRH = null;
+let _bufDoc = null;
+let _srhFilename = '';
+
+function readXLSX(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const wb = XLSX.read(ev.target.result, {type:'binary'});
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        resolve(XLSX.utils.sheet_to_json(ws, {defval:''}));
+      } catch(e) { reject(e); }
+    };
+    reader.readAsBinaryString(file);
+  });
+}
+
+function handleDropSRH(event) {
+  event.preventDefault();
+  document.getElementById('drop-pendentes').classList.remove('drag-over');
+  const file = event.dataTransfer.files[0];
+  if (file) processSRHFile(file);
+}
+
+async function handleFileSRH(event) {
+  const file = event.target.files[0]; if (!file) return;
+  await processSRHFile(file);
+}
+
+async function processSRHFile(file) {
+  _srhFilename = file.name;
+  showStatus('pendentes', 'ok', '⏳ Lendo P1 (SRH)...');
+  // Feedback visual etapa 1
+  document.getElementById('icon-srh').textContent = '⏳';
+  document.getElementById('label-srh').textContent = 'Lendo...';
+  try {
+    _bufSRH = await readXLSX(file);
+    // Etapa 1 ok
+    document.getElementById('icon-srh').textContent = '✅';
+    document.getElementById('label-srh').textContent = `${file.name} — ${_bufSRH.length} linhas`;
+    document.getElementById('step-srh').style.borderColor = '#22c55e';
+    document.getElementById('step-srh').style.background = '#f0fdf4';
+    // Habilita etapa 2 automaticamente e abre seletor
+    const stepDoc = document.getElementById('step-doc');
+    stepDoc.style.opacity = '1';
+    stepDoc.style.pointerEvents = 'auto';
+    stepDoc.style.borderColor = '#7c3aed';
+    stepDoc.style.background = '#f5f3ff';
+    stepDoc.style.cursor = 'pointer';
+    stepDoc.onclick = () => document.getElementById('file-doc').click();
+    document.getElementById('icon-doc').textContent = '📂';
+    document.getElementById('label-doc').textContent = 'Clique aqui para selecionar';
+    document.getElementById('pend-step-desc').innerHTML = 'P1 carregada! Agora selecione a <strong>P2 — Doc</strong> para complementar os dados.';
+    showStatus('pendentes', 'ok', '✅ P1 pronta! Agora selecione a P2 (Doc).');
+    // Abre o seletor da P2 automaticamente
+    setTimeout(() => document.getElementById('file-doc').click(), 300);
+  } catch(e) {
+    document.getElementById('icon-srh').textContent = '❌';
+    document.getElementById('label-srh').textContent = 'Erro: ' + e.message;
+    _bufSRH = null;
+    showStatus('pendentes', 'err', '❌ Erro ao ler P1: ' + e.message);
+  }
+}
+
+async function handleFileDoc(event) {
+  const file = event.target.files[0]; if (!file) return;
+  if (!_bufSRH) { showStatus('pendentes', 'err', '❌ Selecione a P1 (SRH) primeiro.'); return; }
+  showStatus('pendentes', 'ok', '⏳ Lendo P2 (Doc) e cruzando...');
+  document.getElementById('icon-doc').textContent = '⏳';
+  document.getElementById('label-doc').textContent = 'Lendo...';
+  try {
+    _bufDoc = await readXLSX(file);
+    document.getElementById('icon-doc').textContent = '✅';
+    document.getElementById('label-doc').textContent = `${file.name} — ${_bufDoc.length} linhas`;
+    document.getElementById('step-doc').style.borderColor = '#22c55e';
+    document.getElementById('step-doc').style.background = '#f0fdf4';
+    document.getElementById('pend-step-desc').innerHTML = 'P1 e P2 carregadas! Cruzando e importando...';
+    showStatus('pendentes', 'ok', '⏳ Cruzando dados e importando...');
+    // Cruza e importa automaticamente
+    await runImportPendentes(file.name);
+  } catch(e) {
+    document.getElementById('icon-doc').textContent = '❌';
+    document.getElementById('label-doc').textContent = 'Erro: ' + e.message;
+    _bufDoc = null;
+    showStatus('pendentes', 'err', '❌ Erro ao ler P2: ' + e.message);
+  }
+}
+
+async function runImportPendentes(docFilename) {
+  if (!_bufSRH) { showStatus('pendentes', 'err', '❌ Selecione a P1 (SRH) primeiro.'); return; }
+
+  // Monta mapa da P2 pelo ID
+  const docMap = {};
+  if (_bufDoc) {
+    for (const row of _bufDoc) {
+      const id = String(row['ID'] || row['id'] || row['MRH'] || '').trim().replace(/\.0$/, '');
+      if (id) docMap[id] = row;
+    }
+  }
+
+  // Cruza P1 com P2
+  const mergedRows = _bufSRH.map(r1 => {
+    const id = String(r1['ID'] || r1['id'] || '').trim().replace(/\.0$/, '');
+    const r2 = docMap[id] || {};
+    return { ...r2, ...r1 };
+  });
+
+  const filenames = _srhFilename + (docFilename ? ' + ' + docFilename : '');
+  await importPendentes(mergedRows, filenames);
+
+  // Reset UI para próxima importação
+  setTimeout(() => {
+    _bufSRH = null; _bufDoc = null; _srhFilename = '';
+    document.getElementById('file-srh').value = '';
+    document.getElementById('file-doc').value = '';
+    document.getElementById('icon-srh').textContent = '📂';
+    document.getElementById('label-srh').textContent = 'Clique aqui para selecionar';
+    document.getElementById('icon-doc').textContent = '📂';
+    document.getElementById('label-doc').textContent = 'Aguardando P1...';
+    document.getElementById('step-srh').style.borderColor = 'var(--blue-mid,#3b7de8)';
+    document.getElementById('step-srh').style.background = '#eef3ff';
+    document.getElementById('step-doc').style.opacity = '.5';
+    document.getElementById('step-doc').style.pointerEvents = 'none';
+    document.getElementById('step-doc').style.borderColor = '#ccc';
+    document.getElementById('step-doc').style.background = '#f9f9f9';
+    document.getElementById('pend-step-desc').innerHTML = 'Clique para selecionar a <strong>P1 — SRH</strong> (planilha com os IDs / MRHs).';
+  }, 4000);
+}
+
+function mapRowSRH(row) {
   const get = (...keys) => { for(const k of keys) { for(const rk of Object.keys(row)) { if(normalize(rk)===normalize(k)||normalize(rk).includes(normalize(k))) return row[rk]; } } return ''; };
+  const id = String(get('ID','MRH','id') || '').trim().replace(/\.0$/,'');
   return {
-    mrh:               String(get('ID','MRH','id') || '').trim(),
+    mrh:               id,
     funcao:            String(get('DescFuncao','FUNÇÃO','FUNCAO','função') || '').trim(),
     cr:                String(get('DescCR','CONTRATO','CR','descCR') || '').trim(),
     limiteRecrutamento:parseDate(get('LIMITE_RECRUTAMENTO','LIMITE RECRUTAMENTO')),
     inicioContrato:    parseDate(get('INICIO_CONTRATO','INICIO CONTRATO','Início Contrato')),
     gerente:           String(get('XNGERE','GERENTE','gerente') || '').trim(),
-    recrutador:        String(get('RECRUTADOR','recrutador') || '').trim(),
+    recrutador:        String(get('RECRUTADOR','recrutador','RESPONSAVEL','responsável') || '').trim(),
     cpf:               String(get('CPF','cpf') || '').trim().replace(/\D/g,''),
     nome:              String(get('NOME COMPLETO','NOME','nome') || '').trim(),
     whatsapp:          String(get('WHATSAPP','whatsapp') || '').trim(),
@@ -1108,13 +1257,16 @@ function mapRow(row) {
   };
 }
 
+// Mantém mapRow como alias para compatibilidade (usado pelo fluxo enviados)
+function mapRow(row) { return mapRowSRH(row); }
+
 async function importPendentes(rows, filename) {
   let novas = 0, dups = 0;
   showStatus('pendentes', 'ok', '⏳ Importando...');
   for (const row of rows) {
-    const m = mapRow(row);
+    const m = mapRowSRH(row);
     if (!m.mrh && !m.cpf) continue;
-    const exists = DB.pendentes.some(p => p.mrh === m.mrh && p.cpf === m.cpf);
+    const exists = DB.pendentes.some(p => p.mrh === m.mrh);
     if (!exists) {
       const rec = { ...m, _id: uid(), _importedAt: today(), justificativa: '' };
       try {
@@ -1138,14 +1290,16 @@ async function importEnviados(rows, filename) {
   showStatus('enviados', 'ok', '⏳ Importando...');
   for (const row of rows) {
     const m = mapRow(row);
-    const admissao = parseDate(row['ADMISSAO'] || row['Admissão'] || row['admissao'] || row['ADMISSÃO'] || '');
+    const admissao = parseDate(row['ADMISSAO'] || row['Admissão'] || row['admissao'] || row['ADMISSÃO'] || row['DT ADMISSÃO'] || row['DT_ADMISSAO'] || '');
     const finalizacaoRH = parseDate(row['FINALIZACAO_RH'] || row['FINALIZAÇÃO RH'] || row['FINALIZACAO RH'] || row['finalizacao_rh'] || '');
-    const pendRef = DB.pendentes.find(p => p.mrh === m.mrh && p.cpf === m.cpf);
+    // Valida: a MRH enviada precisa existir nos pendentes (por MRH)
+    const pendRef = DB.pendentes.find(p => p.mrh === m.mrh);
     if (!pendRef) { ignorados++; continue; }
-    const exists = DB.enviados.some(e => e.mrh === m.mrh && e.cpf === m.cpf);
+    const exists = DB.enviados.some(e => e.mrh === m.mrh);
     if (exists) { dups++; continue; }
-    const status = calcStatus(m.inicioContrato, finalizacaoRH);
-    const rec = { ...m, admissao, finalizacaoRH, status: status || 'Pendente', _id: uid(), _importedAt: today(), justificativa: '' };
+    const status = calcStatus(m.inicioContrato || pendRef.inicioContrato, finalizacaoRH);
+    // Herda dados do pendente e sobrescreve com o que vier na planilha enviada
+    const rec = { ...pendRef, ...m, admissao, finalizacaoRH, status: status || 'Pendente', _id: uid(), _importedAt: today(), justificativa: '' };
     try {
       await dbInsertEnviado(rec);
       DB.enviados.push(rec);
@@ -1156,7 +1310,7 @@ async function importEnviados(rows, filename) {
   populateFilters();
   filterTable('enviados');
   renderDashboard();
-  showStatus('enviados', 'ok', `✅ ${novas} registros cruzados. ${ignorados} sem histórico pendente (ignorados). ${dups} duplicados.`);
+  showStatus('enviados', 'ok', `✅ ${novas} registros cruzados. ${ignorados} MRHs sem histórico pendente (ignorados). ${dups} duplicados.`);
   addLog(filename, 'Enviados', novas, dups, rows.length);
   toast(`${novas} candidatos enviados importados e cruzados!`, 'success');
 }
@@ -1556,7 +1710,7 @@ function renderCharts() {
     }
   });
 
-  // Chart 3: Performance por Assistente — barras horizontais empilhadas por cor de status
+  // Chart 3: Performance por Assistente — cards com pizza individual
   const assisMap2 = {};
   const t_ = today();
   [...DB.pendentes].forEach(r=>{
@@ -1580,76 +1734,72 @@ function renderCharts() {
     return (tb.pend+tb.prazo+tb.atraso+tb.venceHoje)-(ta.pend+ta.prazo+ta.atraso+ta.venceHoje);
   });
 
-  const barContainer = document.getElementById('chart-assistente-bars');
-  if(barContainer) {
+  const pizzaContainer = document.getElementById('chart-assistente-pizza');
+  if(pizzaContainer) {
+    // limpar canvas antigos
+    Object.keys(charts).filter(k=>k.startsWith('pizza_')).forEach(k=>{ charts[k].destroy(); delete charts[k]; });
+
     if(!assisKeys2.length) {
-      barContainer.innerHTML='<p style="color:var(--gray-400);text-align:center;padding:20px;font-size:13px">Sem dados disponíveis</p>';
+      pizzaContainer.innerHTML='<p style="color:var(--gray-400);text-align:center;padding:20px;font-size:13px;width:100%">Sem dados disponíveis</p>';
     } else {
-      barContainer.innerHTML = assisKeys2.map(name => {
+      pizzaContainer.innerHTML = assisKeys2.map((name,i) => {
         const d = assisMap2[name];
         const total = d.pend + d.prazo + d.atraso + d.venceHoje;
-        const pAtraso = total?Math.round(d.atraso*100/total):0;
-        const pVence = total?Math.round(d.venceHoje*100/total):0;
-        const pPrazo = total?Math.round(d.prazo*100/total):0;
-        const pPend = total?Math.round(d.pend*100/total):0;
+        const pct = (d.prazo+d.pend) > 0 ? Math.round(d.prazo*100/(d.prazo+d.atraso||1)) : 0;
+        const perfColor = pct>=80?'#00C48C':pct>=50?'#FF9500':'#FF4D6A';
+        const perfLabel = pct>=80?'Ótima':pct>=50?'Regular':'Atenção';
         const initls = name.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
-        return `<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;padding:8px 12px;border-radius:8px;background:var(--gray-100)">
-          <div style="width:36px;height:36px;border-radius:50%;background:var(--blue-mid);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0">${initls}</div>
-          <div style="min-width:120px;font-size:12px;font-weight:700;color:var(--blue-dark)">${name}<div style="font-size:10px;color:var(--gray-400);font-weight:500">${total} MRHs</div></div>
-          <div style="flex:1;display:flex;flex-direction:column;gap:4px">
-            <div style="height:18px;border-radius:9px;overflow:hidden;display:flex;background:var(--gray-200)">
-              ${d.atraso?`<div style="width:${pAtraso}%;background:#FF4D6A;display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;font-weight:700;min-width:${d.atraso?20:0}px" title="Em Atraso: ${d.atraso}">${d.atraso}</div>`:''}
-              ${d.venceHoje?`<div style="width:${pVence}%;background:#FFB703;display:flex;align-items:center;justify-content:center;font-size:9px;color:#333;font-weight:700;min-width:${d.venceHoje?20:0}px" title="Vence Hoje: ${d.venceHoje}">${d.venceHoje}</div>`:''}
-              ${d.prazo?`<div style="width:${pPrazo}%;background:#00C48C;display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;font-weight:700;min-width:${d.prazo?20:0}px" title="No Prazo: ${d.prazo}">${d.prazo}</div>`:''}
-              ${d.pend?`<div style="width:${pPend}%;background:#3A86FF;display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;font-weight:700;min-width:${d.pend?20:0}px" title="Pendentes: ${d.pend}">${d.pend}</div>`:''}
-            </div>
-            <div style="display:flex;gap:8px;font-size:10px;font-weight:600">
-              ${d.atraso?`<span style="color:#FF4D6A">⚠ ${d.atraso} atraso</span>`:''}
-              ${d.venceHoje?`<span style="color:#E07800">🔔 ${d.venceHoje} vence hoje</span>`:''}
-              ${d.prazo?`<span style="color:var(--green)">✓ ${d.prazo} no prazo</span>`:''}
-              ${d.pend?`<span style="color:var(--blue-mid)">⏳ ${d.pend} pend.</span>`:''}
+        const avatarColors = ['#1E4DB7','#3A86FF','#00C48C','#FF9500','#9B5DE5','#F72585','#4CC9F0'];
+        const avatarColor = avatarColors[i % avatarColors.length];
+        return `<div style="background:#fff;border-radius:14px;padding:18px 16px;box-shadow:0 2px 12px rgba(10,36,99,0.10);width:200px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:8px;border-top:3px solid ${avatarColor}">
+          <div style="width:42px;height:42px;border-radius:50%;background:${avatarColor};color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800">${initls}</div>
+          <div style="text-align:center">
+            <div style="font-size:12px;font-weight:800;color:var(--blue-dark);line-height:1.3">${name}</div>
+            <div style="font-size:10px;color:var(--gray-400);margin-top:1px">${total} MRHs no total</div>
+          </div>
+          <div style="position:relative;width:100px;height:100px">
+            <canvas id="pizza_${i}" width="100" height="100"></canvas>
+            <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none">
+              <span style="font-size:16px;font-weight:900;color:${perfColor}">${pct}%</span>
+              <span style="font-size:9px;color:var(--gray-400);font-weight:700">PRAZO</span>
             </div>
           </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;width:100%">
+            ${d.prazo?`<div style="background:#E6FAF4;border-radius:8px;padding:4px 6px;text-align:center"><div style="font-size:14px;font-weight:800;color:#00C48C">${d.prazo}</div><div style="font-size:9px;color:#00A87A;font-weight:700">No Prazo</div></div>`:''}
+            ${d.atraso?`<div style="background:#FFF0F2;border-radius:8px;padding:4px 6px;text-align:center"><div style="font-size:14px;font-weight:800;color:#FF4D6A">${d.atraso}</div><div style="font-size:9px;color:#FF4D6A;font-weight:700">Atraso</div></div>`:''}
+            ${d.pend?`<div style="background:#EEF4FF;border-radius:8px;padding:4px 6px;text-align:center"><div style="font-size:14px;font-weight:800;color:#1E4DB7">${d.pend}</div><div style="font-size:9px;color:#1E4DB7;font-weight:700">Pendente</div></div>`:''}
+            ${d.venceHoje?`<div style="background:#FFF5E8;border-radius:8px;padding:4px 6px;text-align:center"><div style="font-size:14px;font-weight:800;color:#FF9500">${d.venceHoje}</div><div style="font-size:9px;color:#FF9500;font-weight:700">Vence Hoje</div></div>`:''}
+          </div>
+          <div style="font-size:10px;font-weight:800;color:${perfColor};background:${pct>=80?'#E6FAF4':pct>=50?'#FFF5E8':'#FFF0F2'};border-radius:20px;padding:3px 12px">${perfLabel}</div>
         </div>`;
       }).join('');
-    }
-  }
 
-  // Chart 4: CR — novo layout em cards horizontais
-  const crMap = {};
-  const crAtraso = {}, crPrazo = {}, crPend = {};
-  [...DB.pendentes].forEach(r=>{ if(r.cr){ crMap[r.cr]=(crMap[r.cr]||0)+1; crPend[r.cr]=(crPend[r.cr]||0)+1; } });
-  [...DB.enviados].forEach(r=>{ if(r.cr){ crMap[r.cr]=(crMap[r.cr]||0)+1; if(r.status==='Em Atraso') crAtraso[r.cr]=(crAtraso[r.cr]||0)+1; else if(r.status==='No Prazo') crPrazo[r.cr]=(crPrazo[r.cr]||0)+1; } });
-  const crKeys = Object.keys(crMap).sort((a,b)=>crMap[b]-crMap[a]);
-
-  const crContainer = document.getElementById('chart-cr-layout');
-  if(crContainer){
-    if(!crKeys.length){
-      crContainer.innerHTML='<p style="color:var(--gray-400);text-align:center;padding:20px;font-size:13px">Sem dados disponíveis</p>';
-    } else {
-      const maxV = Math.max(...crKeys.map(k=>crMap[k]));
-      crContainer.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;padding:4px 0">'
-        + crKeys.map((cr,i) => {
-          const total=crMap[cr], at=crAtraso[cr]||0, pr=crPrazo[cr]||0, pe=crPend[cr]||0;
-          const pctFill=Math.round(total*100/maxV);
-          const pctAtr=total?Math.round(at*100/total):0;
-          const pctPr=total?Math.round(pr*100/total):0;
-          const hue=210+i*20;
-          return `<div style="background:#fff;border-radius:10px;padding:14px 16px;box-shadow:0 2px 8px rgba(10,36,99,.08);border-top:3px solid hsl(${hue},70%,45%)">
-            <div style="font-size:11px;font-weight:800;color:var(--gray-600);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${cr}">${cr}</div>
-            <div style="font-size:28px;font-weight:900;color:hsl(${hue},65%,35%);line-height:1">${total}</div>
-            <div style="font-size:10px;color:var(--gray-400);margin-bottom:8px">MRHs</div>
-            <div style="height:6px;border-radius:3px;background:var(--gray-200);overflow:hidden;margin-bottom:6px">
-              <div style="height:100%;border-radius:3px;background:hsl(${hue},65%,50%);width:${pctFill}%;transition:width .5s"></div>
-            </div>
-            <div style="display:flex;gap:6px;flex-wrap:wrap">
-              ${pe?`<span style="font-size:10px;background:#EEF4FF;color:#1E4DB7;padding:2px 6px;border-radius:20px;font-weight:700">⏳${pe}</span>`:''}
-              ${pr?`<span style="font-size:10px;background:#E6FAF4;color:var(--green);padding:2px 6px;border-radius:20px;font-weight:700">✓${pr}</span>`:''}
-              ${at?`<span style="font-size:10px;background:#FFF0F2;color:var(--red);padding:2px 6px;border-radius:20px;font-weight:700">⚠${at}</span>`:''}
-            </div>
-          </div>`;
-        }).join('')
-        + '</div>';
+      // desenhar pizzas depois do DOM atualizar
+      setTimeout(() => {
+        assisKeys2.forEach((name,i) => {
+          const d = assisMap2[name];
+          const canvas = document.getElementById('pizza_'+i);
+          if(!canvas) return;
+          const c = new Chart(canvas, {
+            type: 'doughnut',
+            data: {
+              labels: ['No Prazo','Em Atraso','Pendentes','Vence Hoje'],
+              datasets: [{
+                data: [d.prazo||0, d.atraso||0, d.pend||0, d.venceHoje||0],
+                backgroundColor: ['#00C48C','#FF4D6A','#3A86FF','#FF9500'],
+                borderWidth: 2, borderColor: '#fff', hoverOffset: 4
+              }]
+            },
+            options: {
+              responsive: false, cutout: '65%',
+              plugins: { legend: { display: false }, tooltip: {
+                callbacks: { label: ctx => ctx.label+': '+ctx.parsed }
+              }}
+            }
+          });
+          charts['pizza_'+i] = c;
+        });
+      }, 50);
     }
   }
 }
